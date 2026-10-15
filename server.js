@@ -13,11 +13,27 @@ if (!process.env.VERCEL) {
   dns.setServers(["8.8.8.8", "1.1.1.1"]);
 }
 
+// Resolve the cluster's server hostnames through the same public DNS,
+// falling back to the system resolver if that fails
+const publicDnsLookup = (hostname, options, callback) => {
+  dns.resolve4(hostname, (error, addresses) => {
+    if (error || addresses.length === 0) {
+      return dns.lookup(hostname, options, callback);
+    }
+    if (options.all) {
+      return callback(null, addresses.map((address) => ({ address, family: 4 })));
+    }
+    callback(null, addresses[0], 4);
+  });
+};
+
+const connectOptions = process.env.VERCEL ? {} : { lookup: publicDnsLookup };
+
 // Reuse one connection across requests (Vercel keeps it between warm invocations)
 let connection;
 const connectDB = () => {
   if (!connection) {
-    connection = mongoose.connect(process.env.MONGO_URI).catch((error) => {
+    connection = mongoose.connect(process.env.MONGO_URI, connectOptions).catch((error) => {
       connection = null;
       throw error;
     });
